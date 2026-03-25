@@ -26,6 +26,7 @@ def get_global_data():
 
 global_data = get_global_data()
 
+# 初始化暫存購物車
 if 'cart' not in st.session_state:
     st.session_state.cart = []
 
@@ -91,11 +92,9 @@ with st.sidebar:
             st.rerun()
 
 # --- 4. 主畫面：顯示與統計 ---
-# 建立 DataFrame 並預防空資料導致的錯誤
-if not global_data["history"]:
-    df = pd.DataFrame(columns=['訂單編號', '時間', '品項', '規格', '付款', '杯數', '金額', '手續費', '利潤', '狀態'])
-else:
-    df = pd.DataFrame(global_data["history"])
+# 確保即使歷史紀錄為空也能渲染畫面
+history_list = global_data["history"]
+df = pd.DataFrame(history_list)
 
 col_main, col_stat = st.columns([3, 2])
 
@@ -124,12 +123,12 @@ with col_main:
                                 item['狀態'] = "已完成"
                         st.rerun()
     else:
-        st.info("尚無訂單。")
+        st.info("尚無訂單。請開始點單。")
 
 with col_stat:
     st.subheader("📊 今日營運統計")
-    # 只有當 df 不為空且有資料時才計算
-    if not df.empty and len(df) > 0:
+    # 增加嚴格檢查：必須有資料且包含需要的欄位
+    if not df.empty and '金額' in df.columns:
         total_rev = int(df['金額'].sum())
         total_fees = round(df['手續費'].sum(), 1)
         total_profit = int(df['利潤'].sum())
@@ -140,9 +139,10 @@ with col_stat:
         m2.metric("預估淨利", f"${total_profit}")
         
         st.divider()
-        st.write("📈 品項銷售分佈")
-        drink_stats = df.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
-        st.bar_chart(drink_stats)
+        st.write("📈 品項銷售統計")
+        if '品項' in df.columns:
+            drink_stats = df.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
+            st.bar_chart(drink_stats)
         
         if st.button("📥 下載今日報表"):
             csv = df.to_csv(index=False).encode('utf-8-sig')
@@ -152,4 +152,4 @@ with col_stat:
             global_data["history"] = []
             st.rerun()
     else:
-        st.write("等待首筆訂單中...")
+        st.write("目前尚無成交紀錄，統計表將在首筆訂單完成後顯示。")
