@@ -73,17 +73,10 @@ with st.sidebar:
             for item in st.session_state.cart:
                 order_fee = item['小計'] * fee_rate
                 global_data["history"].append({
-                    "類別": "訂單",
-                    "訂單編號": order_id,
-                    "時間": now_time,
-                    "品項": item["品項"],
-                    "規格": item["規格"],
-                    "付款": pay_method,
-                    "杯數": item["杯數"],
-                    "金額": item["小計"],
-                    "手續費": order_fee,
-                    "利潤": item["小計"] - item["成本小計"] - order_fee,
-                    "狀態": "製作中"
+                    "類別": "訂單", "訂單編號": order_id, "時間": now_time,
+                    "品項": item["品項"], "規格": item["規格"], "付款": pay_method,
+                    "杯數": item["杯數"], "金額": item["小計"], "手續費": order_fee,
+                    "利潤": item["小計"] - item["成本小計"] - order_fee, "狀態": "製作中"
                 })
             st.session_state.cart = [] 
             st.success("訂單已送出！")
@@ -101,11 +94,5 @@ with st.sidebar:
         if exp_name and exp_amount > 0:
             tw_now = get_taiwan_time()
             global_data["expenses"].append({
-                "類別": "雜支",
-                "時間": tw_now.strftime("%H:%M"),
-                "品項": exp_name,
-                "金額": -exp_amount,
-                "利潤": -exp_amount,
-                "付款": "現金支出"
-            })
-            st.success(f"已記錄支出: {exp_name}")
+                "類別": "雜支", "時間": tw_now.strftime("%H:%M"), "品項": exp_name,
+                "金額": -exp_amount, "利潤":
