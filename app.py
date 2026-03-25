@@ -90,9 +90,4 @@ with st.sidebar:
     st.subheader("📝 營業雜支紀錄")
     exp_name = st.text_input("項目 (如: 買冰塊)")
     exp_amount = st.number_input("支出金額", min_value=0, value=0, step=1)
-    if st.button("💸 紀錄支出", use_container_width=True):
-        if exp_name and exp_amount > 0:
-            tw_now = get_taiwan_time()
-            global_data["expenses"].append({
-                "類別": "雜支", "時間": tw_now.strftime("%H:%M"), "品項": exp_name,
-                "金額": -exp_amount, "利潤":
+    if st.button("
