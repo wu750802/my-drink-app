@@ -76,7 +76,8 @@ with st.sidebar:
                     "類別": "訂單", "訂單編號": order_id, "時間": now_time,
                     "品項": item["品項"], "規格": item["規格"], "付款": pay_method,
                     "杯數": item["杯數"], "金額": item["小計"], "手續費": order_fee,
-                    "利潤": item["小計"] - item["成本小計"] - order_fee, "狀態": "製作中"
+                    "利潤": item["小計"] - item["成本_小計" if "成本_小計" in item else "成本小計"] - order_fee, 
+                    "狀態": "製作中"
                 })
             st.session_state.cart = [] 
             st.success("訂單已送出！")
@@ -161,9 +162,14 @@ with col_stat:
         
         st.divider()
         if not orders_only.empty:
-            st.write("📈 品項銷量分布")
-            drink_stats = orders_only.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
-            st.bar_chart(drink_stats)
+            # --- 新增：各品項杯數統計表 ---
+            st.write("📦 **品項銷量明細**")
+            # 依品項加總杯數與金額
+            item_summary = orders_only.groupby("品項").agg({"杯數": "sum", "金額": "sum"}).sort_values(by="杯數", ascending=False)
+            st.table(item_summary)
+            
+            st.write("📈 **銷量分布圖**")
+            st.bar_chart(item_summary["杯數"])
         
         if st.button("📥 下載今日總報表"):
             tw_date = get_taiwan_time().strftime('%Y%m%d')
