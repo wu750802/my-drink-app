@@ -22,7 +22,8 @@ PAYMENTS = ["現金", "街口", "Line Pay"]
 # --- 2. 建立共享資料庫 ---
 @st.cache_resource
 def get_global_data():
-    return {"history": []}
+    # history 存訂單，expenses 存雜支
+    return {"history": [], "expenses": []}
 
 global_data = get_global_data()
 
@@ -30,9 +31,11 @@ global_data = get_global_data()
 if 'cart' not in st.session_state:
     st.session_state.cart = []
 
-# --- 3. 側邊欄：點單員 ---
+# --- 3. 側邊欄：點單與雜支輸入 ---
 with st.sidebar:
     st.markdown(f"## 🏪 安泰穂 - 點單櫃檯")
+    
+    # --- 點單區 ---
     st.subheader("第一步：挑選飲品")
     drink = st.selectbox("選擇品項", DRINKS)
     price = DRINK_DATA[drink]["賣價"]
@@ -54,6 +57,7 @@ with st.sidebar:
         })
         st.rerun()
 
+    # --- 結帳確認區 ---
     if st.session_state.cart:
         st.divider()
         st.subheader("第二步：結帳確認")
@@ -88,21 +92,37 @@ with st.sidebar:
             st.rerun()
         
         if st.button("🗑️ 取消整單"):
-            st.session_state.cart.append # 無意義行，僅佔位
             st.session_state.cart = []
             st.rerun()
 
+    # --- 雜支輸入區 ---
+    st.divider()
+    st.subheader("📝 營業雜支紀錄")
+    exp_name = st.text_input("支出項目 (如: 買冰塊)", placeholder="輸入項目名稱")
+    exp_amount = st.number_input("支出金額", min_value=0, value=0, step=1)
+    
+    if st.button("💸 紀錄支出", use_container_width=True):
+        if exp_name and exp_amount > 0:
+            global_data["expenses"].append({
+                "時間": datetime.now().strftime("%H:%M"),
+                "項目": exp_name,
+                "金額": exp_amount
+            })
+            st.success(f"已記錄支出: {exp_name} ${exp_amount}")
+            st.rerun()
+        else:
+            st.warning("請填寫項目與金額")
+
 # --- 4. 主畫面：顯示與統計 ---
-# 強制建立標準結構
+# 建立訂單與雜支的 DataFrame
 columns = ['訂單編號', '時間', '品項', '規格', '付款', '杯數', '金額', '手續費', '利潤', '狀態']
 df = pd.DataFrame(global_data["history"], columns=columns)
+df_exp = pd.DataFrame(global_data["expenses"], columns=['時間', '項目', '金額'])
 
-# 確保數值欄位是數字型態
-if not df.empty:
-    df['金額'] = pd.to_numeric(df['金額'], errors='coerce').fillna(0)
-    df['手續費'] = pd.to_numeric(df['手續費'], errors='coerce').fillna(0)
-    df['利潤'] = pd.to_numeric(df['利潤'], errors='coerce').fillna(0)
-    df['杯數'] = pd.to_numeric(df['杯數'], errors='coerce').fillna(0)
+# 強制型態轉換
+for col in ['金額', '手續費', '利潤', '杯數']:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
 col_main, col_stat = st.columns([3, 2])
 
@@ -129,34 +149,44 @@ with col_main:
                         if item['訂單編號'] == oid:
                             item['狀態'] = "已完成"
                     st.rerun()
+    
+    # 顯示今日雜支列表
+    if not df_exp.empty:
+        st.divider()
+        st.subheader("🧾 今日雜支明細")
+        st.table(df_exp)
 
 with col_stat:
     st.subheader("📊 今日營運統計")
-    if not df.empty and len(df) > 0:
-        # 計算不分狀態的所有訂單總和
-        total_rev = int(df['金額'].sum())
-        total_fees = round(df['手續費'].sum(), 1)
-        total_profit = int(df['利潤'].sum())
-        total_cups = int(df['杯數'].sum())
+    if not df.empty or not df_exp.empty:
+        # 計算財務
+        total_rev = int(df['金額'].sum()) if not df.empty else 0
+        total_fees = round(df['手續費'].sum(), 1) if not df.empty else 0
+        order_profit = int(df['利潤'].sum()) if not df.empty else 0
+        total_expenses = int(df_exp['金額'].sum()) if not df_exp.empty else 0
+        
+        # 最終淨利 = 訂單利潤 - 雜支
+        final_profit = order_profit - total_expenses
         
         m1, m2 = st.columns(2)
         m1.metric("今日總營收", f"${total_rev}")
-        m1.metric("手續費支出", f"-${total_fees}")
-        m2.metric("預估淨利", f"${total_profit}")
-        m2.metric("總銷售杯數", f"{total_cups} 杯")
+        m1.metric("雜支總計", f"-${total_expenses}")
+        m2.metric("預估淨獲利", f"${final_profit}", delta=f"手續費: -${total_fees}", delta_color="inverse")
         
         st.divider()
         st.write("📈 品項銷售分佈")
-        drink_stats = df.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
-        st.bar_chart(drink_stats)
+        if not df.empty:
+            drink_stats = df.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
+            st.bar_chart(drink_stats)
         
         st.divider()
         if st.button("📥 下載今日報表"):
             csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("確認下載", csv, f"安泰穂_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+            st.download_button("確認下載訂單", csv, f"安泰穂_訂單_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
             
         if st.button("🧹 結帳清除紀錄"):
             global_data["history"] = []
+            global_data["expenses"] = []
             st.rerun()
     else:
-        st.write("尚未有成交紀錄。")
+        st.write("等待營運資料中...")
