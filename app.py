@@ -74,7 +74,7 @@ with st.sidebar:
                 global_data["history"].append({
                     "訂單編號": order_id,
                     "時間": now_time,
-                    "品項": drink, # 修正變數名稱
+                    "品項": item["品項"],
                     "規格": item["規格"],
                     "付款": pay_method,
                     "杯數": item["杯數"],
@@ -88,13 +88,21 @@ with st.sidebar:
             st.rerun()
         
         if st.button("🗑️ 取消整單"):
+            st.session_state.cart.append # 無意義行，僅佔位
             st.session_state.cart = []
             st.rerun()
 
 # --- 4. 主畫面：顯示與統計 ---
-# 強制定義欄位結構，避免任何 KeyError
+# 強制建立標準結構
 columns = ['訂單編號', '時間', '品項', '規格', '付款', '杯數', '金額', '手續費', '利潤', '狀態']
 df = pd.DataFrame(global_data["history"], columns=columns)
+
+# 確保數值欄位是數字型態
+if not df.empty:
+    df['金額'] = pd.to_numeric(df['金額'], errors='coerce').fillna(0)
+    df['手續費'] = pd.to_numeric(df['手續費'], errors='coerce').fillna(0)
+    df['利潤'] = pd.to_numeric(df['利潤'], errors='coerce').fillna(0)
+    df['杯數'] = pd.to_numeric(df['杯數'], errors='coerce').fillna(0)
 
 col_main, col_stat = st.columns([3, 2])
 
@@ -124,4 +132,31 @@ with col_main:
 
 with col_stat:
     st.subheader("📊 今日營運統計")
-    # 使用 try
+    if not df.empty and len(df) > 0:
+        # 計算不分狀態的所有訂單總和
+        total_rev = int(df['金額'].sum())
+        total_fees = round(df['手續費'].sum(), 1)
+        total_profit = int(df['利潤'].sum())
+        total_cups = int(df['杯數'].sum())
+        
+        m1, m2 = st.columns(2)
+        m1.metric("今日總營收", f"${total_rev}")
+        m1.metric("手續費支出", f"-${total_fees}")
+        m2.metric("預估淨利", f"${total_profit}")
+        m2.metric("總銷售杯數", f"{total_cups} 杯")
+        
+        st.divider()
+        st.write("📈 品項銷售分佈")
+        drink_stats = df.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
+        st.bar_chart(drink_stats)
+        
+        st.divider()
+        if st.button("📥 下載今日報表"):
+            csv = df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button("確認下載", csv, f"安泰穂_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+            
+        if st.button("🧹 結帳清除紀錄"):
+            global_data["history"] = []
+            st.rerun()
+    else:
+        st.write("尚未有成交紀錄。")
