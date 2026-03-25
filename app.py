@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta # 引入 timedelta 來調整時差
 
 # 網頁基礎設定
 st.set_page_config(page_title="安泰穂 POS 系統", layout="wide")
@@ -19,23 +19,25 @@ ICE = ["熱", "去冰", "微冰", "少冰", "正常冰"]
 SUGAR = ["無糖", "微糖", "半糖", "少糖", "全糖"]
 PAYMENTS = ["現金", "街口", "Line Pay"]
 
+# --- 💡 核心修正：定義台灣時間函數 ---
+def get_taiwan_time():
+    # 抓取伺服器時間並加上 8 小時
+    return datetime.utcnow() + timedelta(hours=8)
+
 # --- 2. 建立共享資料庫 ---
 @st.cache_resource
 def get_global_data():
-    # history 存訂單，expenses 存雜支
     return {"history": [], "expenses": []}
 
 global_data = get_global_data()
 
-# 初始化暫存購物車
 if 'cart' not in st.session_state:
     st.session_state.cart = []
 
-# --- 3. 側邊欄：點單與雜支輸入 ---
+# --- 3. 側邊欄：點單與雜支 ---
 with st.sidebar:
     st.markdown(f"## 🏪 安泰穂 - 點單櫃檯")
     
-    # --- 點單區 ---
     st.subheader("第一步：挑選飲品")
     drink = st.selectbox("選擇品項", DRINKS)
     price = DRINK_DATA[drink]["賣價"]
@@ -48,16 +50,11 @@ with st.sidebar:
     if st.button("➕ 加入暫存", use_container_width=True):
         cost = DRINK_DATA[drink]["成本"]
         st.session_state.cart.append({
-            "品項": drink,
-            "規格": f"{ice}/{sugar}",
-            "杯數": int(qty),
-            "單價": price,
-            "小計": price * int(qty),
-            "成本小計": cost * int(qty)
+            "品項": drink, "規格": f"{ice}/{sugar}", "杯數": int(qty),
+            "單價": price, "小計": price * int(qty), "成本小計": cost * int(qty)
         })
         st.rerun()
 
-    # --- 結帳確認區 ---
     if st.session_state.cart:
         st.divider()
         st.subheader("第二步：結帳確認")
@@ -69,8 +66,10 @@ with st.sidebar:
         pay_method = st.selectbox("選擇付款方式", PAYMENTS)
         
         if st.button("🚀 確認收款並送出訂單", type="primary", use_container_width=True):
-            order_id = datetime.now().strftime("%H%M%S")
-            now_time = datetime.now().strftime("%H:%M")
+            # 💡 修正：使用台灣時間作為編號與紀錄
+            tw_now = get_taiwan_time()
+            order_id = tw_now.strftime("%H%M%S")
+            now_time = tw_now.strftime("%H:%M")
             fee_rate = 0.03 if pay_method in ["街口", "Line Pay"] else 0
             
             for item in st.session_state.cart:
@@ -88,7 +87,7 @@ with st.sidebar:
                     "狀態": "製作中"
                 })
             st.session_state.cart = [] 
-            st.success("訂單送出成功！")
+            st.success(f"訂單送出成功！(台灣時間 {now_time})")
             st.rerun()
         
         if st.button("🗑️ 取消整單"):
@@ -98,28 +97,25 @@ with st.sidebar:
     # --- 雜支輸入區 ---
     st.divider()
     st.subheader("📝 營業雜支紀錄")
-    exp_name = st.text_input("支出項目 (如: 買冰塊)", placeholder="輸入項目名稱")
+    exp_name = st.text_input("項目 (如: 買冰塊)")
     exp_amount = st.number_input("支出金額", min_value=0, value=0, step=1)
     
     if st.button("💸 紀錄支出", use_container_width=True):
         if exp_name and exp_amount > 0:
+            tw_now = get_taiwan_time()
             global_data["expenses"].append({
-                "時間": datetime.now().strftime("%H:%M"),
+                "時間": tw_now.strftime("%H:%M"),
                 "項目": exp_name,
                 "金額": exp_amount
             })
             st.success(f"已記錄支出: {exp_name} ${exp_amount}")
             st.rerun()
-        else:
-            st.warning("請填寫項目與金額")
 
-# --- 4. 主畫面：顯示與統計 ---
-# 建立訂單與雜支的 DataFrame
+# --- 4. 主畫面顯示與統計 ---
 columns = ['訂單編號', '時間', '品項', '規格', '付款', '杯數', '金額', '手續費', '利潤', '狀態']
 df = pd.DataFrame(global_data["history"], columns=columns)
 df_exp = pd.DataFrame(global_data["expenses"], columns=['時間', '項目', '金額'])
 
-# 強制型態轉換
 for col in ['金額', '手續費', '利潤', '杯數']:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -143,50 +139,4 @@ with col_main:
                     t_pay = group['付款'].iloc[0]
                     st.write(f"**訂單 #{oid}** | 付款: :blue[{t_pay}] | **總額: ${t_price}**")
                     for _, row in group.iterrows():
-                        st.write(f"🔹 {row['品項']} ({row['規格']}) x {row['杯數']}")
-                if c_btn.button("✅ 完成", key=f"btn_{oid}", use_container_width=True):
-                    for item in global_data["history"]:
-                        if item['訂單編號'] == oid:
-                            item['狀態'] = "已完成"
-                    st.rerun()
-    
-    # 顯示今日雜支列表
-    if not df_exp.empty:
-        st.divider()
-        st.subheader("🧾 今日雜支明細")
-        st.table(df_exp)
-
-with col_stat:
-    st.subheader("📊 今日營運統計")
-    if not df.empty or not df_exp.empty:
-        # 計算財務
-        total_rev = int(df['金額'].sum()) if not df.empty else 0
-        total_fees = round(df['手續費'].sum(), 1) if not df.empty else 0
-        order_profit = int(df['利潤'].sum()) if not df.empty else 0
-        total_expenses = int(df_exp['金額'].sum()) if not df_exp.empty else 0
-        
-        # 最終淨利 = 訂單利潤 - 雜支
-        final_profit = order_profit - total_expenses
-        
-        m1, m2 = st.columns(2)
-        m1.metric("今日總營收", f"${total_rev}")
-        m1.metric("雜支總計", f"-${total_expenses}")
-        m2.metric("預估淨獲利", f"${final_profit}", delta=f"手續費: -${total_fees}", delta_color="inverse")
-        
-        st.divider()
-        st.write("📈 品項銷售分佈")
-        if not df.empty:
-            drink_stats = df.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
-            st.bar_chart(drink_stats)
-        
-        st.divider()
-        if st.button("📥 下載今日報表"):
-            csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("確認下載訂單", csv, f"安泰穂_訂單_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
-            
-        if st.button("🧹 結帳清除紀錄"):
-            global_data["history"] = []
-            global_data["expenses"] = []
-            st.rerun()
-    else:
-        st.write("等待營運資料中...")
+                        st.write(f"🔹 {row['
