@@ -1,90 +1,103 @@
-with open('app.py', 'w', encoding='utf-8') as f:
-    f.write("""
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# 網頁設定
-st.set_page_config(page_title="飲料點單系統", layout="wide")
-st.title("🥤 雲端飲料點單與統計 (手機/平板同步版)")
 
-# 選項
+st.set_page_config(page_title="泰式飲品 POS 系統", layout="wide")
+st.title("🥤 泰式飲品 - 雲端同步點單系統")
+
+
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1apQ3JzTtEaFniD896dkOwDNfc4pxOy8DSzY5S4yLglA/edit?gid=0#gid=0"
+
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+
+def load_data():
+    try:
+        return conn.read(spreadsheet=SHEET_URL, usecols=[0,1,2,3,4,5], ttl="0s")
+    except:
+        return pd.DataFrame(columns=['訂單編號', '時間', '品項', '規格', '杯數', '狀態'])
+
+
+def save_data(df):
+    conn.update(spreadsheet=SHEET_URL, data=df)
+    st.cache_data.clear()
+
+
 DRINKS = ["泰奶", "泰綠", "可可", "紅茶", "檸檬紅茶"]
 ICE = ["熱", "去冰", "微冰", "少冰", "正常冰"]
 SUGAR = ["無糖", "微糖", "半糖", "少糖", "全糖"]
 
-# 初始化 Session (存放在雲端記憶體中)
-if 'history' not in st.session_state:
-    st.session_state.history = []
 if 'cart' not in st.session_state:
     st.session_state.cart = []
 
-# --- 側邊欄：手機點單區 ---
+
 with st.sidebar:
-    st.header("🛒 新增點單")
+    st.header("🛒 快速點單")
     drink = st.selectbox("品項", DRINKS)
     ice = st.radio("冰塊", ICE, horizontal=True, index=2)
     sugar = st.radio("甜度", SUGAR, horizontal=True, index=2)
     qty = st.number_input("杯數", min_value=1, value=1)
     
-    if st.button("➕ 加入暫存", use_container_width=True):
+    if st.button("➕ 加入購物車", use_container_width=True):
         st.session_state.cart.append({"品項": drink, "規格": f"{ice}/{sugar}", "杯數": qty})
 
     if st.session_state.cart:
         st.divider()
-        st.write("📝 暫存清單：")
         for i, item in enumerate(st.session_state.cart):
             st.write(f"{i+1}. {item['品項']} x {item['杯數']}")
         
-        if st.button("🚀 確認送出整單", type="primary", use_container_width=True):
+        if st.button("🚀 確認送出訂單", type="primary", use_container_width=True):
+            current_df = load_data()
             order_id = datetime.now().strftime("%H%M%S")
+            new_rows = []
             for item in st.session_state.cart:
-                item['ID'] = order_id
-                item['時間'] = datetime.now().strftime("%H:%M")
-                item['狀態'] = "製作中"
-                st.session_state.history.append(item)
+                new_rows.append({
+                    "訂單編號": order_id,
+                    "時間": datetime.now().strftime("%H:%M"),
+                    "品項": item["品項"],
+                    "規格": item["規格"],
+                    "杯數": item["杯數"],
+                    "狀態": "製作中"
+                })
+            updated_df = pd.concat([current_df, pd.DataFrame(new_rows)], ignore_index=True)
+            save_data(updated_df)
             st.session_state.cart = []
-            st.success("訂單已送出！")
-            st.rerun()
-        
-        if st.button("🗑️ 清空暫存"):
-            st.session_state.cart = []
+            st.success("訂單已同步至 Google Sheets！")
             st.rerun()
 
-# --- 主畫面：平板統計區 ---
-col1, col2 = st.columns([3, 2])
 
-with col1:
+df = load_data()
+
+col_list, col_stat = st.columns([3, 2])
+
+with col_list:
     st.subheader("📋 待處理訂單")
-    if not st.session_state.history:
-        st.info("目前沒有訂單")
-    else:
-        df = pd.DataFrame(st.session_state.history)
+    # 定時自動重新整理按鈕 (Streamlit Cloud 建議手動按或加自動重新整理)
+    if st.button("🔄 重新整理訂單"):
+        st.rerun()
+
+    if not df.empty:
         pending = df[df['狀態'] == "製作中"]
-        
         if pending.empty:
-            st.success("✨ 所有訂單已完成！")
+            st.success("✨ 目前沒有待辦訂單")
         else:
-            for oid, group in pending.groupby('ID'):
+            for oid, group in pending.groupby('訂單編號'):
                 with st.container(border=True):
-                    c_info, c_btn = st.columns([4, 1])
-                    with c_info:
-                        st.write(f"**訂單 #{oid}** (時間: {group['時間'].iloc[0]})")
+                    c1, c2 = st.columns([4, 1])
+                    with c1:
+                        st.write(f"**訂單 #{oid}**")
                         for _, row in group.iterrows():
                             st.write(f"🔹 {row['品項']} ({row['規格']}) x {row['杯數']}")
-                    if c_btn.button("完成", key=oid):
-                        for i, h in enumerate(st.session_state.history):
-                            if h['ID'] == oid: st.session_state.history[i]['狀態'] = "已完成"
+                    if c2.button("完成", key=f"done_{oid}"):
+                        df.loc[df['訂單編號'] == oid, '狀態'] = "已完成"
+                        save_data(df)
                         st.rerun()
 
-with col2:
-    st.subheader("📊 今日統計")
-    if st.session_state.history:
-        df_all = pd.DataFrame(st.session_state.history)
-        st.metric("總杯數", f"{df_all['杯數'].sum()} 杯")
-        
-        stats = df_all.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
+with col_stat:
+    st.subheader("📊 今日銷量統計")
+    if not df.empty:
+        st.metric("今日總杯數", f"{df['杯數'].astype(int).sum()} 杯")
+        stats = df.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
         st.bar_chart(stats)
-    else:
-        st.write("尚無統計數據")
-""")
