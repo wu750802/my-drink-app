@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta # 引入 timedelta 來調整時差
+from datetime import datetime, timedelta
 
 # 網頁基礎設定
 st.set_page_config(page_title="安泰穂 POS 系統", layout="wide")
@@ -19,9 +19,8 @@ ICE = ["熱", "去冰", "微冰", "少冰", "正常冰"]
 SUGAR = ["無糖", "微糖", "半糖", "少糖", "全糖"]
 PAYMENTS = ["現金", "街口", "Line Pay"]
 
-# --- 💡 核心修正：定義台灣時間函數 ---
+# --- 定義台灣時間函數 ---
 def get_taiwan_time():
-    # 抓取伺服器時間並加上 8 小時
     return datetime.utcnow() + timedelta(hours=8)
 
 # --- 2. 建立共享資料庫 ---
@@ -36,7 +35,7 @@ if 'cart' not in st.session_state:
 
 # --- 3. 側邊欄：點單與雜支 ---
 with st.sidebar:
-    st.markdown(f"## 🏪 安泰穂 - 點單櫃檯")
+    st.markdown("## 🏪 安泰穂 - 點單櫃檯")
     
     st.subheader("第一步：挑選飲品")
     drink = st.selectbox("選擇品項", DRINKS)
@@ -66,7 +65,6 @@ with st.sidebar:
         pay_method = st.selectbox("選擇付款方式", PAYMENTS)
         
         if st.button("🚀 確認收款並送出訂單", type="primary", use_container_width=True):
-            # 💡 修正：使用台灣時間作為編號與紀錄
             tw_now = get_taiwan_time()
             order_id = tw_now.strftime("%H%M%S")
             now_time = tw_now.strftime("%H:%M")
@@ -87,56 +85,12 @@ with st.sidebar:
                     "狀態": "製作中"
                 })
             st.session_state.cart = [] 
-            st.success(f"訂單送出成功！(台灣時間 {now_time})")
+            st.success(f"訂單已送出！")
             st.rerun()
         
         if st.button("🗑️ 取消整單"):
             st.session_state.cart = []
             st.rerun()
 
-    # --- 雜支輸入區 ---
     st.divider()
-    st.subheader("📝 營業雜支紀錄")
-    exp_name = st.text_input("項目 (如: 買冰塊)")
-    exp_amount = st.number_input("支出金額", min_value=0, value=0, step=1)
-    
-    if st.button("💸 紀錄支出", use_container_width=True):
-        if exp_name and exp_amount > 0:
-            tw_now = get_taiwan_time()
-            global_data["expenses"].append({
-                "時間": tw_now.strftime("%H:%M"),
-                "項目": exp_name,
-                "金額": exp_amount
-            })
-            st.success(f"已記錄支出: {exp_name} ${exp_amount}")
-            st.rerun()
-
-# --- 4. 主畫面顯示與統計 ---
-columns = ['訂單編號', '時間', '品項', '規格', '付款', '杯數', '金額', '手續費', '利潤', '狀態']
-df = pd.DataFrame(global_data["history"], columns=columns)
-df_exp = pd.DataFrame(global_data["expenses"], columns=['時間', '項目', '金額'])
-
-for col in ['金額', '手續費', '利潤', '杯數']:
-    if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-col_main, col_stat = st.columns([3, 2])
-
-with col_main:
-    st.subheader("📋 安泰穂 - 待處理訂單")
-    if st.button("🔄 刷新清單"):
-        st.rerun()
-
-    pending = df[df['狀態'] == "製作中"]
-    if pending.empty:
-        st.info("✨ 目前沒有待辦訂單。")
-    else:
-        for oid, group in pending.groupby('訂單編號'):
-            with st.container(border=True):
-                c_info, c_btn = st.columns([4, 1.5])
-                with c_info:
-                    t_price = group['金額'].sum()
-                    t_pay = group['付款'].iloc[0]
-                    st.write(f"**訂單 #{oid}** | 付款: :blue[{t_pay}] | **總額: ${t_price}**")
-                    for _, row in group.iterrows():
-                        st.write(f"🔹 {row['
+    st.subheader("📝 營業
