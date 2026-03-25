@@ -155,7 +155,7 @@ with col_stat:
         m1, m2 = st.columns(2)
         m1.metric("今日總營收", f"${rev}")
         m1.metric("總銷售杯數", f"{cups} 杯")
-        m2.metric("預估淨獲利", f"${profit}")
+        m2.metric("預估淨獲利 (總利潤)", f"${profit}")
         
         st.divider()
         if not orders_only.empty:
@@ -167,9 +167,17 @@ with col_stat:
         if st.button("📥 下載今日總報表"):
             tw_date = get_taiwan_time().strftime('%Y%m%d')
             output = io.StringIO()
+            # 寫入明細
             df_full.to_csv(output, index=False, encoding='utf-8-sig')
+            
+            # 寫入分隔與統計總結
+            output.write("\n\n--- 營運總結 ---\n")
+            output.write(f"今日總營收,${rev}\n")
+            output.write(f"今日總杯數,{cups}\n")
+            output.write(f"今日總利潤,${profit}\n")
+            
             if not orders_only.empty:
-                output.write("\n\n--- 品項銷售總結 ---\n")
+                output.write("\n--- 品項銷量明細 ---\n")
                 item_summary.to_csv(output, encoding='utf-8-sig')
             
             csv_data = output.getvalue().encode('utf-8-sig')
