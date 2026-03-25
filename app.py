@@ -73,6 +73,7 @@ with st.sidebar:
             for item in st.session_state.cart:
                 order_fee = item['小計'] * fee_rate
                 global_data["history"].append({
+                    "類別": "訂單",
                     "訂單編號": order_id,
                     "時間": now_time,
                     "品項": item["品項"],
@@ -100,21 +101,29 @@ with st.sidebar:
         if exp_name and exp_amount > 0:
             tw_now = get_taiwan_time()
             global_data["expenses"].append({
+                "類別": "雜支",
                 "時間": tw_now.strftime("%H:%M"),
-                "項目": exp_name,
-                "金額": exp_amount
+                "品項": exp_name,
+                "金額": -exp_amount, # 雜支在金額顯示為負值
+                "利潤": -exp_amount, # 雜支直接扣除利潤
+                "付款": "現金支出"
             })
             st.success(f"已記錄支出: {exp_name}")
             st.rerun()
 
 # --- 4. 主畫面顯示與統計 ---
-columns = ['訂單編號', '時間', '品項', '規格', '付款', '杯數', '金額', '手續費', '利潤', '狀態']
-df = pd.DataFrame(global_data["history"], columns=columns)
-df_exp = pd.DataFrame(global_data["expenses"], columns=['時間', '項目', '金額'])
+# 建立訂單與雜支的總表
+columns = ['類別', '訂單編號', '時間', '品項', '規格', '付款', '杯數', '金額', '手續費', '利潤', '狀態']
+df_history = pd.DataFrame(global_data["history"], columns=columns)
+df_expenses = pd.DataFrame(global_data["expenses"])
 
+# 合併所有紀錄用於報表匯出
+df_full_report = pd.concat([df_history, df_expenses], ignore_index=True)
+
+# 強制數值轉換
 for col in ['金額', '手續費', '利潤', '杯數']:
-    if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    if col in df_full_report.columns:
+        df_full_report[col] = pd.to_numeric(df_full_report[col], errors='coerce').fillna(0)
 
 col_main, col_stat = st.columns([3, 2])
 
@@ -123,55 +132,36 @@ with col_main:
     if st.button("🔄 刷新清單"):
         st.rerun()
 
-    pending = df[df['狀態'] == "製作中"]
-    if pending.empty:
-        st.info("✨ 目前沒有待辦訂單。")
-    else:
-        for oid, group in pending.groupby('訂單編號'):
-            with st.container(border=True):
-                c_info, c_btn = st.columns([4, 1.5])
-                with c_info:
-                    t_price = group['金額'].sum()
-                    t_pay = group['付款'].iloc[0]
-                    st.write(f"**訂單 #{oid}** | 付款: :blue[{t_pay}] | **總額: ${t_price}**")
-                    for _, row in group.iterrows():
-                        st.write(f"🔹 {row['品項']} ({row['規格']}) x {row['杯數']}")
-                if c_btn.button("✅ 完成製作", key=f"btn_{oid}", use_container_width=True):
-                    for item in global_data["history"]:
-                        if item['訂單編號'] == oid:
-                            item['狀態'] = "已完成"
-                    st.rerun()
+    if not df_history.empty:
+        pending = df_history[df_history['狀態'] == "製作中"]
+        if pending.empty:
+            st.info("✨ 目前沒有待辦訂單。")
+        else:
+            for oid, group in pending.groupby('訂單編號'):
+                with st.container(border=True):
+                    c_info, c_btn = st.columns([4, 1.5])
+                    with c_info:
+                        t_price = group['金額'].sum()
+                        t_pay = group['付款'].iloc[0]
+                        st.write(f"**訂單 #{oid}** | 付款: :blue[{t_pay}] | **總額: ${t_price}**")
+                        for _, row in group.iterrows():
+                            st.write(f"🔹 {row['品項']} ({row['規格']}) x {row['杯數']}")
+                    if c_btn.button("✅ 完成製作", key=f"btn_{oid}", use_container_width=True):
+                        for item in global_data["history"]:
+                            if item.get('訂單編號') == oid:
+                                item['狀態'] = "已完成"
+                        st.rerun()
     
-    if not df_exp.empty:
+    if not df_expenses.empty:
         st.divider()
         st.subheader("🧾 今日雜支明細")
-        st.table(df_exp)
+        st.table(df_expenses[['時間', '品項', '金額']])
 
 with col_stat:
     st.subheader("📊 今日營運統計")
-    if not df.empty or not df_exp.empty:
-        total_rev = int(df['金額'].sum()) if not df.empty else 0
-        total_fees = round(df['手續費'].sum(), 1) if not df.empty else 0
-        order_profit = int(df['利潤'].sum()) if not df.empty else 0
-        total_expenses = int(df_exp['金額'].sum()) if not df_exp.empty else 0
-        final_profit = order_profit - total_expenses
+    if not df_full_report.empty:
+        # 篩選訂單類別進行計算
+        orders = df_full_report[df_full_report['類別'] == "訂單"]
+        exps = df_full_report[df_full_report['類別'] == "雜支"]
         
-        m1, m2 = st.columns(2)
-        m1.metric("今日總營收", f"${total_rev}")
-        m1.metric("雜支總計", f"-${total_expenses}")
-        m2.metric("預估淨獲利", f"${final_profit}", delta=f"手續費: -${total_fees}", delta_color="inverse")
-        
-        st.divider()
-        if not df.empty:
-            drink_stats = df.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
-            st.bar_chart(drink_stats)
-        
-        if st.button("📥 下載今日報表"):
-            tw_date = get_taiwan_time().strftime('%Y%m%d')
-            csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("確認下載", csv, f"安泰穂_報表_{tw_date}.csv", "text/csv")
-            
-        if st.button("🧹 結帳清空紀錄"):
-            global_data["history"] = []
-            global_data["expenses"] = []
-            st.rerun()
+        total_rev = int(orders['金額'].sum()) if not orders.empty else 0
