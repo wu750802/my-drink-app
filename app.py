@@ -74,7 +74,7 @@ with st.sidebar:
                 global_data["history"].append({
                     "訂單編號": order_id,
                     "時間": now_time,
-                    "品項": item["品項"],
+                    "品項": drink, # 修正變數名稱
                     "規格": item["規格"],
                     "付款": pay_method,
                     "杯數": item["杯數"],
@@ -92,9 +92,9 @@ with st.sidebar:
             st.rerun()
 
 # --- 4. 主畫面：顯示與統計 ---
-# 確保即使歷史紀錄為空也能渲染畫面
-history_list = global_data["history"]
-df = pd.DataFrame(history_list)
+# 強制定義欄位結構，避免任何 KeyError
+columns = ['訂單編號', '時間', '品項', '規格', '付款', '杯數', '金額', '手續費', '利潤', '狀態']
+df = pd.DataFrame(global_data["history"], columns=columns)
 
 col_main, col_stat = st.columns([3, 2])
 
@@ -103,53 +103,25 @@ with col_main:
     if st.button("🔄 刷新清單"):
         st.rerun()
 
-    if not df.empty:
-        pending = df[df['狀態'] == "製作中"]
-        if pending.empty:
-            st.success("✨ 目前沒有待辦訂單")
-        else:
-            for oid, group in pending.groupby('訂單編號'):
-                with st.container(border=True):
-                    c_info, c_btn = st.columns([4, 1.5])
-                    with c_info:
-                        t_price = group['金額'].sum()
-                        t_pay = group['付款'].iloc[0]
-                        st.write(f"**訂單 #{oid}** | 付款: :blue[{t_pay}] | **總額: ${t_price}**")
-                        for _, row in group.iterrows():
-                            st.write(f"🔹 {row['品項']} ({row['規格']}) x {row['杯數']}")
-                    if c_btn.button("✅ 完成", key=f"btn_{oid}", use_container_width=True):
-                        for item in global_data["history"]:
-                            if item['訂單編號'] == oid:
-                                item['狀態'] = "已完成"
-                        st.rerun()
+    pending = df[df['狀態'] == "製作中"]
+    if pending.empty:
+        st.info("✨ 目前沒有待辦訂單。")
     else:
-        st.info("尚無訂單。請開始點單。")
+        for oid, group in pending.groupby('訂單編號'):
+            with st.container(border=True):
+                c_info, c_btn = st.columns([4, 1.5])
+                with c_info:
+                    t_price = group['金額'].sum()
+                    t_pay = group['付款'].iloc[0]
+                    st.write(f"**訂單 #{oid}** | 付款: :blue[{t_pay}] | **總額: ${t_price}**")
+                    for _, row in group.iterrows():
+                        st.write(f"🔹 {row['品項']} ({row['規格']}) x {row['杯數']}")
+                if c_btn.button("✅ 完成", key=f"btn_{oid}", use_container_width=True):
+                    for item in global_data["history"]:
+                        if item['訂單編號'] == oid:
+                            item['狀態'] = "已完成"
+                    st.rerun()
 
 with col_stat:
     st.subheader("📊 今日營運統計")
-    # 增加嚴格檢查：必須有資料且包含需要的欄位
-    if not df.empty and '金額' in df.columns:
-        total_rev = int(df['金額'].sum())
-        total_fees = round(df['手續費'].sum(), 1)
-        total_profit = int(df['利潤'].sum())
-        
-        m1, m2 = st.columns(2)
-        m1.metric("今日總營收", f"${total_rev}")
-        m1.metric("手續費支出", f"-${total_fees}")
-        m2.metric("預估淨利", f"${total_profit}")
-        
-        st.divider()
-        st.write("📈 品項銷售統計")
-        if '品項' in df.columns:
-            drink_stats = df.groupby("品項")["杯數"].sum().reindex(DRINKS, fill_value=0)
-            st.bar_chart(drink_stats)
-        
-        if st.button("📥 下載今日報表"):
-            csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("確認下載", csv, f"安泰穂_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
-            
-        if st.button("🧹 結帳清除紀錄"):
-            global_data["history"] = []
-            st.rerun()
-    else:
-        st.write("目前尚無成交紀錄，統計表將在首筆訂單完成後顯示。")
+    # 使用 try
