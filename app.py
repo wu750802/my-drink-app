@@ -68,39 +68,4 @@ with st.sidebar:
             tw_now = get_taiwan_time()
             order_id = tw_now.strftime("%H%M%S")
             now_time = tw_now.strftime("%H:%M")
-            fee_rate = 0.03 if pay_method in ["街口", "Line Pay"] else 0
-            
-            for item in st.session_state.cart:
-                order_fee = item['小計'] * fee_rate
-                global_data["history"].append({
-                    "類別": "訂單", "訂單編號": order_id, "時間": now_time,
-                    "品項": item["品項"], "規格": item["規格"], "付款": pay_method,
-                    "杯數": int(item["杯數"]), "金額": item["小計"], "手續費": order_fee,
-                    "利潤": item["小計"] - item["成本小計"] - order_fee, "狀態": "製作中"
-                })
-            st.session_state.cart = [] 
-            st.success("訂單已送出！")
-            st.rerun()
-
-    st.divider()
-    st.subheader("📝 營業雜支紀錄")
-    exp_name = st.text_input("項目 (如: 買冰塊)")
-    exp_amount = st.number_input("支出金額", min_value=0, value=0, step=1)
-    if st.button("💸 紀錄支出", use_container_width=True):
-        if exp_name and exp_amount > 0:
-            tw_now = get_taiwan_time()
-            global_data["expenses"].append({
-                "類別": "雜支", "時間": tw_now.strftime("%H:%M"), "品項": exp_name,
-                "金額": -exp_amount, "利潤": -exp_amount, "付款": "現金支出", "狀態": "已完成", "杯數": 0
-            })
-            st.success(f"已記錄支出: {exp_name}")
-            st.rerun()
-
-# --- 4. 主畫面顯示與統計 ---
-ALL_COLS = ['類別', '訂單編號', '時間', '品項', '規格', '付款', '杯數', '金額', '手續費', '利潤', '狀態']
-df_history = pd.DataFrame(global_data["history"], columns=ALL_COLS)
-df_expenses = pd.DataFrame(global_data["expenses"])
-df_full = pd.concat([df_history, df_expenses], ignore_index=True).fillna(0)
-
-# 強制數值轉換為整數/浮點數
-for col in ['金額', '手續
+            fee_rate = 0.03 if pay_method in ["街口", "Line Pay"]
