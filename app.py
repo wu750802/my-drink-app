@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -7,13 +8,15 @@ import io
 st.set_page_config(page_title="安泰穂 POS 系統", layout="wide")
 st.title("🥤 安泰穂 - 專屬點單與財務管理系統")
 
-# --- 1. 飲品數據設定 ---
+# --- 1. 飲品數據設定 (完全依照圖片數據校對) ---
 DRINK_DATA = {
-    "泰奶": {"成本": 28, "賣價": 70},
-    "泰綠": {"成本": 32, "賣價": 70},
-    "可可": {"成本": 24, "賣價": 60},
-    "紅茶": {"成本": 11, "賣價": 50},
-    "檸檬紅茶": {"成本": 20, "賣價": 60}
+    "泰奶": {"成本": 21, "賣價": 70},
+    "泰綠": {"成本": 22, "賣價": 70},
+    "可可": {"成本": 21, "賣價": 60},
+    "紅茶": {"成本": 16, "賣價": 50},
+    "檸檬紅茶": {"成本": 19, "賣價": 60},
+    "玫瑰奶茶": {"成本": 29, "賣價": 90},
+    "斑斕綠茶": {"成本": 17, "賣價": 60}
 }
 DRINKS = list(DRINK_DATA.keys())
 ICE = ["熱", "去冰", "微冰", "少冰", "正常冰"]
@@ -22,6 +25,7 @@ PAYMENTS = ["現金", "街口", "Line Pay"]
 
 # --- 定義台灣時間函數 ---
 def get_taiwan_time():
+    # 修正 UTC 與台灣時差
     return datetime.utcnow() + timedelta(hours=8)
 
 # --- 2. 建立共享資料庫 ---
@@ -49,8 +53,12 @@ with st.sidebar:
     if st.button("➕ 加入暫存", use_container_width=True):
         cost = DRINK_DATA[drink]["成本"]
         st.session_state.cart.append({
-            "品項": drink, "規格": f"{ice}/{sugar}", "杯數": int(qty),
-            "單價": price, "小計": price * int(qty), "成本小計": cost * int(qty)
+            "品項": drink, 
+            "規格": f"{ice}/{sugar}", 
+            "杯數": int(qty),
+            "單價": price, 
+            "小計": price * int(qty), 
+            "成本小計": cost * int(qty)
         })
         st.rerun()
 
@@ -73,13 +81,20 @@ with st.sidebar:
             for item in st.session_state.cart:
                 order_fee = item['小計'] * fee_rate
                 global_data["history"].append({
-                    "類別": "訂單", "訂單編號": order_id, "時間": now_time,
-                    "品項": item["品項"], "規格": item["規格"], "付款": pay_method,
-                    "杯數": int(item["杯數"]), "金額": item["小計"], "手續費": order_fee,
-                    "利潤": item["小計"] - item["成本小計"] - order_fee, "狀態": "製作中"
+                    "類別": "訂單", 
+                    "訂單編號": order_id, 
+                    "時間": now_time,
+                    "品項": item["品項"], 
+                    "規格": item["規格"], 
+                    "付款": pay_method,
+                    "杯數": int(item["杯數"]), 
+                    "金額": item["小計"], 
+                    "手續費": order_fee,
+                    "利潤": item["小計"] - item["成本小計"] - order_fee, 
+                    "狀態": "製作中"
                 })
             st.session_state.cart = [] 
-            st.success("訂單已送出！")
+            st.success("訂單已成功送出！")
             st.rerun()
         
         if st.button("🗑️ 取消整單"):
@@ -94,8 +109,14 @@ with st.sidebar:
         if exp_name and exp_amount > 0:
             tw_now = get_taiwan_time()
             global_data["expenses"].append({
-                "類別": "雜支", "時間": tw_now.strftime("%H:%M"), "品項": exp_name,
-                "金額": -exp_amount, "利潤": -exp_amount, "付款": "現金支出", "狀態": "已完成", "杯數": 0
+                "類別": "雜支", 
+                "時間": tw_now.strftime("%H:%M"), 
+                "品項": exp_name,
+                "金額": -exp_amount, 
+                "利潤": -exp_amount, 
+                "付款": "現金支出", 
+                "狀態": "已完成", 
+                "杯數": 0
             })
             st.success(f"已記錄支出: {exp_name}")
             st.rerun()
@@ -106,9 +127,8 @@ df_history = pd.DataFrame(global_data["history"], columns=ALL_COLS)
 df_expenses = pd.DataFrame(global_data["expenses"])
 df_full = pd.concat([df_history, df_expenses], ignore_index=True).fillna(0)
 
-# 強制數值轉換
-num_cols = ['金額', '手續費', '利潤', '杯數']
-for col in num_cols:
+# 數值型態強制轉換與整數化
+for col in ['金額', '手續費', '利潤']:
     if col in df_full.columns:
         df_full[col] = pd.to_numeric(df_full[col], errors='coerce').fillna(0)
 df_full['杯數'] = df_full['杯數'].astype(int)
@@ -155,7 +175,7 @@ with col_stat:
         m1, m2 = st.columns(2)
         m1.metric("今日總營收", f"${rev}")
         m1.metric("總銷售杯數", f"{cups} 杯")
-        m2.metric("預估淨獲利 (總利潤)", f"${profit}")
+        m2.metric("今日預估獲利", f"${profit}")
         
         st.divider()
         if not orders_only.empty:
@@ -170,22 +190,27 @@ with col_stat:
             # 寫入明細
             df_full.to_csv(output, index=False, encoding='utf-8-sig')
             
-            # 寫入分隔與統計總結
+            # 寫入營運總結
             output.write("\n\n--- 營運總結 ---\n")
             output.write(f"今日總營收,${rev}\n")
-            output.write(f"今日總杯數,{cups}\n")
-            output.write(f"今日總利潤,${profit}\n")
+            output.write(f"今日總銷售杯數,{cups}\n")
+            output.write(f"今日總獲利,${profit}\n")
             
             if not orders_only.empty:
-                output.write("\n--- 品項銷量明細 ---\n")
+                output.write("\n--- 各品項銷售細目 ---\n")
                 item_summary.to_csv(output, encoding='utf-8-sig')
             
             csv_data = output.getvalue().encode('utf-8-sig')
-            st.download_button("確認下載 CSV", csv_data, f"安泰穂_報表_{tw_date}.csv", "text/csv")
+            st.download_button(
+                label="確認下載 CSV",
+                data=csv_data,
+                file_name=f"安泰穂_報表_{tw_date}.csv",
+                mime="text/csv"
+            )
             
         if st.button("🧹 結帳清空紀錄"):
             global_data["history"] = []
             global_data["expenses"] = []
             st.rerun()
     else:
-        st.write("⏳ 等待資料錄入...")
+        st.write("⏳ 等待今日首筆資料輸入...")
